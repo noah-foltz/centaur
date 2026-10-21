@@ -5,6 +5,8 @@ FROM ubuntu:24.04 AS toolchain
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # ── System packages (cached unless base image changes) ───────────────────────
+# ca-certificates >= 20260816ubuntu0.24.04.1 distrusts the eMudhra-chained roots
+# whose intermediate CA keys were disclosed on 2026-10-20; fail on an older bundle.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -20,6 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     texlive-latex-recommended texlive-fonts-recommended \
     texlive-plain-generic texlive-science tipa cm-super \
     procps htop \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816ubuntu0.24.04.1 \
     && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info
 
@@ -62,6 +65,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     rich>=13.0.0 \
     slack-sdk==3.39.0 \
     tomli-w==1.2.0 \
+    "certifi>=2026.10.19" \
     && find /usr/local/lib/python3.12 /usr/lib/python3 -type d -name __pycache__ -prune -exec rm -rf '{}' +
 
 # ── GitHub CLI + Node.js 24 (LTS) + Docker CLI + Google Cloud CLI (cached) ──
@@ -81,6 +85,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
       | tee /etc/apt/sources.list.d/google-cloud-sdk.list > /dev/null \
     && apt-get update && apt-get install -y --no-install-recommends gh nodejs docker-ce-cli google-cloud-cli \
+    && dpkg --compare-versions "$(node --version | sed 's/^v//')" ge 24.22.1 \
     && gcloud --version >/dev/null \
     && bq version >/dev/null \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info
@@ -202,11 +207,14 @@ ENV PATH="/home/agent/.cargo/bin:/home/agent/.local/bin:/home/agent/.foundry/bin
 ARG FOUNDRY_VERSION=v1.7.0
 ARG AMP_CLI_VERSION=0.0.1774529752-g94f44d
 ARG MANIM_VERSION=0.20.1
+# No Bun release distrusts the compromised eMudhra roots yet; bump when one ships.
 ARG BUN_VERSION=bun-v1.3.13
+ARG UV_VERSION=0.13.4
 
 # ── Agent-scoped toolchains ─────────────────────────────────────────────────
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
       | sh -s -- -y --profile minimal --default-toolchain nightly --component rustfmt --component clippy \
+    && dpkg --compare-versions "$(rustup --version 2>/dev/null | awk '{print $2}')" ge 1.29.2 \
     && rustup toolchain install stable --profile minimal \
     && rustc --version \
     && cargo --version \
@@ -220,7 +228,8 @@ RUN --mount=type=cache,target=/home/agent/.cargo/registry,uid=1001,gid=1001,shar
     CARGO_TARGET_DIR=/home/agent/.cache/kache-install-target \
     cargo install --git https://github.com/kunobi-ninja/kache --tag "${KACHE_VERSION}" --locked kache \
     && kache --version
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh \
+    && uv --version | grep -Eq "^uv ${UV_VERSION}( |$)"
 RUN curl -fsSL https://bun.sh/install | bash -s "${BUN_VERSION}"
 RUN --mount=type=cache,target=/home/agent/.cache/uv,uid=1001,gid=1001,sharing=locked \
     uv tool install "manim==${MANIM_VERSION}" \

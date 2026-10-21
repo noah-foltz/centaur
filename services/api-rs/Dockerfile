@@ -23,16 +23,19 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     esac
 
 FROM debian:bookworm-slim
+# ca-certificates >= 20250419~deb12u2 distrusts the eMudhra-chained roots whose
+# intermediate CA keys were disclosed on 2026-10-20; fail the build on an older bundle.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-pip
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-pip \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2
 COPY --from=builder /usr/local/bin/centaur-api-server /usr/local/bin/centaur-api-server
 WORKDIR /app
 COPY centaur_sdk/ /app/centaur_sdk/
 COPY services/workflow-python/ /app/workflow-python/
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip3 install --break-system-packages --no-compile --ignore-installed "packaging>=24.2.0" \
-    && pip3 install --break-system-packages --no-compile /app/centaur_sdk /app/workflow-python \
+    && pip3 install --break-system-packages --no-compile /app/centaur_sdk /app/workflow-python "certifi>=2026.10.19" \
     && python3 -c "import boto3, botocore" \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info
 # api-rs discovers tool secret metadata from pyproject.toml at startup so it can

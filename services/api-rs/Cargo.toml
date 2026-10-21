@@ -39,7 +39,9 @@ async-trait = "0.1"
 absurd-sdk = { path = "crates/absurd-sdk" }
 axum = "0.8.9"
 aws-config = "1"
-aws-sdk-s3 = "1"
+# Drop the SDK's legacy `rustls` feature (rustls 0.21 / rustls-webpki 0.101 via
+# hyper 0.14); `default-https-client` already provides the hyper 1 / rustls 0.23 client.
+aws-sdk-s3 = { version = "1", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio", "sigv4a"] }
 aws-smithy-types = "1"
 bytes = { version = "1", features = ["serde"] }
 centaur-api-server = { path = "crates/centaur-api-server" }
